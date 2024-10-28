@@ -2,7 +2,7 @@ use avian3d::math::PI;
 use bevy::{input::*, prelude::*};
 use mouse::MouseMotion;
 
-use crate::{entities::player::player::CAMERA_OFFSET_VEC3, Game};
+use crate::entities::player::player::{Player, PlayerCamera, CAMERA_OFFSET_VEC3};
 
 use super::controls::InputMap;
 
@@ -24,16 +24,19 @@ const CAMERA_BOTTOM_DEADZONE: f32 = PI / 4.0;
 
 // control the game character
 pub fn move_player(
-    mut _commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut mouse_motion: EventReader<MouseMotion>,
-    mut game: ResMut<Game>,
-    mut transforms: Query<&mut Transform>,
+    mut player: Query<&mut Player>,
+    mut player_transform: Query<&mut Transform, (With<Player>, Without<PlayerCamera>)>,
+    mut player_camera_transform: Query<&mut Transform, (With<PlayerCamera>, Without<Player>)>,
     time: Res<Time>,
 ) {
+    let mut player = player.single_mut();
+    let mut player_transform = player_transform.single_mut();
+    let mut player_camera_transform = player_camera_transform.single_mut();
+
     // Create delta from 
     let delta = time.delta().as_secs_f32();
-    let player =  &mut game.player;
     let current_velocity = player.get_velocity();
     let current_rotation = player.get_rotation();
 
@@ -113,12 +116,14 @@ pub fn move_player(
     player.set_location(global_position);
     
     // Apply transforms
-    *transforms.get_mut(player.get_entity()).unwrap() = Transform {
+    *player_transform = Transform {
         translation: global_position,
         rotation: rotation_quat,
         ..default()
     };
-    *transforms.get_mut(player.get_camera()).unwrap() = Transform {
+
+    // Apply camera transforms
+    *player_camera_transform = Transform {
         // translation: CAMERA_OFFSET_VEC3, // use for first person so camera doesn't rotate around origin
         translation: camera_rotation_quat.mul_vec3(CAMERA_OFFSET_VEC3),
         rotation: camera_rotation_quat,

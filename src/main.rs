@@ -14,7 +14,6 @@ fn main() {
         .init_resource::<Game>()
         .add_systems(Startup, setup)
         .add_systems(Update,move_player)
-        .add_systems(Update,move_player)
         .add_systems(Update, handle_cursor)
         .add_systems(Update, handle_key_window_functions)
         .add_systems(Update, update_debug_screen)
@@ -23,7 +22,6 @@ fn main() {
 
 #[derive(Resource, Default)]
 struct Game {
-    player: Player,
     debug_screen: DebugScreen,
     state: GameState,
 }
@@ -47,10 +45,10 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    game.player.spawn_bundle(commands.reborrow(), 
+    Player::spawn(commands.reborrow(), 
         meshes.reborrow(),
         materials.reborrow(),
-        None,
+        Some(Vec3::new(0.0, 0.0, 5.0)),
         None);
     let debug_visibility = game.state.debug_menu_visibility.to_owned();
     game.debug_screen.build(commands.reborrow(), debug_visibility);

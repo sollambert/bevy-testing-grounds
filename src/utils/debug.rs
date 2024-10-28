@@ -1,7 +1,7 @@
 use avian3d::prelude::CollidingEntities;
 use bevy::prelude::*;
 
-use crate::Game;
+use crate::{entities::player::player::Player, Game};
 
 pub struct DebugScreen {
     entity: Option<Entity>,
@@ -56,7 +56,9 @@ pub fn update_debug_screen(
     mut game: ResMut<Game>,
     asset_server: Res<AssetServer>,
     key: Res<ButtonInput<KeyCode>>,
+    mut player: Query<&Player>,
     query: Query<(Entity, &CollidingEntities)>) {
+    let player = player.single_mut();
 
     let style = TextStyle {
         font: asset_server.load("fonts/Roboto/Roboto-Light.ttf"),
@@ -67,12 +69,12 @@ pub fn update_debug_screen(
     // Create location display
     if let Some(location_section) = game.debug_screen.location_section {
         commands.entity(location_section).insert(TextBundle::from_section(
-            format!("{}", game.player),
+            format!("{}", player),
             style.to_owned()
         ));
     } else {
         game.debug_screen.location_section = Some(commands.spawn(TextBundle::from_section(
-            format!("Position: {}", game.player),
+            format!("Position: {}", player),
             style.to_owned()
         )).id());
     }
