@@ -2,7 +2,7 @@ use avian3d::{prelude::{AngularVelocity, Collider, Friction, RigidBody}, Physics
 use bevy::prelude::*;
 use controls::{controls::{handle_cursor, handle_key_window_functions}, player::move_player};
 use entities::player::player::Player;
-use utils::debug::{update_debug_screen, DebugScreen};
+use utils::debug::{setup_debug_screen, update_debug_screen};
 
 mod controls;
 mod entities;
@@ -21,37 +21,20 @@ fn main() {
 }
 
 #[derive(Resource, Default)]
-struct Game {
-    debug_screen: DebugScreen,
-    state: GameState,
-}
-
-struct GameState {
-    debug_menu_visibility: Visibility,
-}
-
-impl Default for GameState {
-    fn default() -> Self {
-        Self {
-            debug_menu_visibility: Visibility::Hidden,
-        }
-    }
-}
+struct Game;
 
 fn setup(
     mut commands: Commands,
-    mut game: ResMut<Game>,
     mut _asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    setup_debug_screen(commands.reborrow());
     Player::spawn(commands.reborrow(), 
         meshes.reborrow(),
         materials.reborrow(),
         Some(Vec3::new(0.0, 0.0, 5.0)),
         None);
-    let debug_visibility = game.state.debug_menu_visibility.to_owned();
-    game.debug_screen.build(commands.reborrow(), debug_visibility);
     
     // Static physics object with a collision shape
     commands.spawn((
