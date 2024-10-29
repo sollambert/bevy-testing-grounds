@@ -6,7 +6,7 @@ use bevy::{math::*, prelude::*};
 pub const CAMERA_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.75, 10.0);
 
 
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct Player {
     location: Vec3,
     velocity: Vec3,
@@ -45,7 +45,7 @@ impl Player {
             mut meshes: Mut<Assets<Mesh>>,
             mut materials: Mut<Assets<StandardMaterial>>,
             spawn_location: Option<Vec3>,
-            spawn_rotation: Option<Vec3>) {
+            spawn_rotation: Option<Vec3>) -> Entity {
         // Create rotation for starting position
         let spawn_rotation = spawn_rotation.unwrap_or(Vec3::ZERO);
         let spawn_location = spawn_location.unwrap_or(Vec3::ZERO);
@@ -99,7 +99,7 @@ impl Player {
                     ..default()
                 }
             ));
-        });
+        }).id()
     }
 }
 

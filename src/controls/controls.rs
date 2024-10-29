@@ -2,7 +2,7 @@ use std::process::exit;
 
 use bevy::{prelude::*, window::{CursorGrabMode, PrimaryWindow, WindowMode}};
 
-use crate::Game;
+use crate::utils::debug::DebugDisplay;
 
 pub struct InputMap {
     pub left: KeyCode,
@@ -35,12 +35,13 @@ impl Default for InputMap {
 }
 
 pub fn handle_key_window_functions(
-    commands: Commands,
+    mut commands: Commands,
     mut q_windows: Query<&mut Window, With<PrimaryWindow>>,
-    mut game: ResMut<Game>,
-    key: Res<ButtonInput<KeyCode>>
+    key: Res<ButtonInput<KeyCode>>,
+    mut q_debug_menu: Query<(Entity, &mut DebugDisplay)>
 ) {
     let mut primary_window = q_windows.single_mut();
+    let (debug_menu_entity, mut debug_display) = q_debug_menu.single_mut();
     let input_map = InputMap::default();
 
     if key.just_pressed(input_map.close) {
@@ -48,19 +49,22 @@ pub fn handle_key_window_functions(
     }
 
     if key.just_pressed(input_map.debug_menu) {
-        let visibility = match game.state.debug_menu_visibility {
-            Visibility::Hidden => {
-                Visibility::Visible
+        let mut visibility: Visibility = Visibility::Visible;
+        let mut debug_menu_commands = commands.entity(debug_menu_entity);
+        if debug_display.visibility == Visibility::Visible {
+            visibility = Visibility::Hidden;
+        }
+        debug_display.visibility = visibility;
+        debug_menu_commands.insert(NodeBundle {
+            visibility,
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                ..default()
             },
-            Visibility::Visible => {
-                Visibility::Hidden
-            },
-            _ => {
-                Visibility::Hidden
-            }
-        };
-        game.state.debug_menu_visibility = visibility;
-        game.debug_screen.set_visibility(commands, visibility);
+            ..default()
+        });
     }
 
     if key.just_pressed(input_map.fullscreen) {
