@@ -6,15 +6,17 @@ use crate::entities::player::player::{Player, PlayerCamera, CAMERA_OFFSET_VEC3};
 
 use super::controls::InputMap;
 
+const MAX_WALKING_VELOCITY: f32 = 0.1;
+const JUMP_VELOCITY: f32 = 20.0;
+const TURN_SPEED: f32 = 1.5;
+const ACCELERATION: f32 = 1.0;
+const DECELERATION: f32 = 10.0;
+
 const LEFT: Vec3 = Vec3::NEG_X;
 const RIGHT: Vec3 = Vec3::X;
 const FORWARD: Vec3 = Vec3::NEG_Z;
 const BACKWARD: Vec3 = Vec3::Z;
-
-const MAX_WALKING_VELOCITY: f32 = 0.1;
-const TURN_SPEED: f32 = 1.5;
-const ACCELERATION: f32 = 1.0;
-const DECELERATION: f32 = 10.0;
+const JUMP_VECTOR: Vec3 = Vec3::new(0.0, JUMP_VELOCITY, 0.0);
 
 const MOUSE_SENSITIVITY_X: f32 = 0.003;
 const MOUSE_SENSITIVITY_Y: f32 = 0.002;
@@ -61,6 +63,10 @@ pub fn move_player(
         if keyboard_input.pressed(input_map.right) {
             direction += RIGHT;
         }
+    }
+
+    if keyboard_input.just_pressed(input_map.jump) {
+        direction += JUMP_VECTOR;
     }
 
     // Build rotation vector by keypress

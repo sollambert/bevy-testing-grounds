@@ -1,4 +1,4 @@
-use avian3d::{prelude::{AngularVelocity, Collider, Friction, RigidBody}, PhysicsPlugins};
+use avian3d::{prelude::{AngularVelocity, Collider, Friction, Gravity, RigidBody}, PhysicsPlugins};
 use bevy::prelude::*;
 use controls::{controls::{handle_cursor, handle_key_window_functions}, player::move_player};
 use entities::player::player::Player;
@@ -11,6 +11,7 @@ mod utils;
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, PhysicsPlugins::default()))
+            .insert_resource(Gravity(Vec3::NEG_Y * 9.81))
         .init_resource::<Game>()
         .add_systems(Startup, setup)
         .add_systems(Update,move_player)
@@ -33,7 +34,7 @@ fn setup(
     Player::spawn(commands.reborrow(), 
         meshes.reborrow(),
         materials.reborrow(),
-        Some(Vec3::new(0.0, 0.0, 5.0)),
+        Some(Vec3::new(0.0, 0.0, 10.0)),
         None);
     
     // Static physics object with a collision shape
@@ -42,9 +43,9 @@ fn setup(
         Collider::cylinder(20.0, 0.1),
         Friction::new(0.5),
         PbrBundle {
-            mesh: meshes.add(Cylinder::new(4.0, 0.1)),
+            mesh: meshes.add(Cylinder::new(20.0, 0.1)),
             material: materials.add(Color::WHITE),
-            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            transform: Transform::from_xyz(0.0, -0.05, 0.0),
             ..default()
         },
     ));

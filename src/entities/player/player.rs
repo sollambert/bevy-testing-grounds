@@ -88,7 +88,11 @@ impl Player {
             parent.spawn((
                 PlayerRigidBody,
                 RigidBody::Kinematic,
-                Collider::capsule(0.5, 1.0)
+                Collider::capsule(0.5, 1.0),
+                SpatialBundle {
+                    transform: Transform::from_xyz(0.0, 1.0, 0.0),
+                    ..default()
+                }
             ));
             parent.spawn((
                 PlayerMesh,
