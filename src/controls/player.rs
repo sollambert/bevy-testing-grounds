@@ -1,22 +1,22 @@
-use avian3d::math::PI;
+use avian3d::{math::{PI, TAU}, prelude::{RayCaster, RayHits}};
 use bevy::{input::*, prelude::*};
 use mouse::MouseMotion;
 
-use crate::entities::player::player::{Player, PlayerCamera, CAMERA_OFFSET_VEC3};
+use crate::entities::player::player::{Player, PlayerCamera, PlayerFloorRay, PlayerMesh, PlayerRigidBody, BODY_OFFSET_VEC3, CAMERA_OFFSET_VEC3};
 
 use super::controls::InputMap;
 
-const MAX_WALKING_VELOCITY: f32 = 0.1;
-const JUMP_VELOCITY: f32 = 20.0;
-const TURN_SPEED: f32 = 1.5;
-const ACCELERATION: f32 = 1.0;
-const DECELERATION: f32 = 10.0;
-
-const LEFT: Vec3 = Vec3::NEG_X;
-const RIGHT: Vec3 = Vec3::X;
+// const LEFT: Vec3 = Vec3::NEG_X;
+// const RIGHT: Vec3 = Vec3::X;
 const FORWARD: Vec3 = Vec3::NEG_Z;
 const BACKWARD: Vec3 = Vec3::Z;
-const JUMP_VECTOR: Vec3 = Vec3::new(0.0, JUMP_VELOCITY, 0.0);
+const GRAVITY: Vec3 = Vec3::new(0.0, -6., 0.0);
+const JUMP_VELOCITY: Vec3 = Vec3::new(0.0, 0.5, 0.0);
+
+const MAX_WALKING_VELOCITY: f32 = 1.0;
+const TURN_SPEED: f32 = PI / 16.0;
+const ACCELERATION: f32 = 0.3;
+const DECELERATION: f32 = 1.0;
 
 const MOUSE_SENSITIVITY_X: f32 = 0.003;
 const MOUSE_SENSITIVITY_Y: f32 = 0.002;
@@ -24,18 +24,35 @@ const MOUSE_SENSITIVITY_Y: f32 = 0.002;
 const CAMERA_TOP_DEADZONE: f32 = PI / 4.0;
 const CAMERA_BOTTOM_DEADZONE: f32 = PI / 4.0;
 
+pub fn handle_player_is_on_floor(
+    mut q_player: Query<&mut Player>,
+    q_player_floor_ray: Query<(&RayCaster, &RayHits), With<PlayerFloorRay>>,
+) {
+    let mut player = q_player.single_mut();
+    let current_velocity = player.get_velocity();
+    let mut current_location = player.get_location();
+    for (player_floor_caster, player_floor_hits) in q_player_floor_ray.iter() {
+        for floor_hit in player_floor_hits.iter() {
+            player.is_on_floor = true;
+            player.set_velocity(current_velocity * Vec3::new(1.0, 0.0, 1.0));
+            current_location.y += player_floor_caster.max_time_of_impact - floor_hit.time_of_impact - 0.15;
+            player.set_location(current_location);
+            return;
+        }
+    }
+    player.is_on_floor = false;
+}
+
 // control the game character
-pub fn move_player(
+pub fn handle_player_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut mouse_motion: EventReader<MouseMotion>,
-    mut player: Query<&mut Player>,
-    mut player_transform: Query<&mut Transform, (With<Player>, Without<PlayerCamera>)>,
-    mut player_camera_transform: Query<&mut Transform, (With<PlayerCamera>, Without<Player>)>,
+    mut q_player: Query<(&mut Player, &mut Transform)>,
     time: Res<Time>,
 ) {
-    let mut player = player.single_mut();
-    let mut player_transform = player_transform.single_mut();
-    let mut player_camera_transform = player_camera_transform.single_mut();
+    let (mut player, mut player_transform) = q_player.single_mut();
+    if player.bailed {
+        return;
+    }
 
     // Create delta from 
     let delta = time.delta().as_secs_f32();
@@ -50,72 +67,54 @@ pub fn move_player(
     let input_map = InputMap::default();
 
     // Build direction vector by keypress
-    if current_velocity.length() < MAX_WALKING_VELOCITY {
+    if current_velocity.length() < MAX_WALKING_VELOCITY && player.is_on_floor  {
         if keyboard_input.pressed(input_map.back) {
             direction += BACKWARD;
         }
         if keyboard_input.pressed(input_map.forward) {
             direction += FORWARD;
         }
-        if keyboard_input.pressed(input_map.left) {
-            direction += LEFT;
-        }
-        if keyboard_input.pressed(input_map.right) {
-            direction += RIGHT;
-        }
     }
 
-    if keyboard_input.just_pressed(input_map.jump) {
-        direction += JUMP_VECTOR;
+    // Turn player
+    if keyboard_input.pressed(input_map.left) {
+        rotation.y += TURN_SPEED * TAU * delta;
     }
-
-    // Build rotation vector by keypress
-    if keyboard_input.pressed(input_map.turn_l) {
-        rotation.y += TURN_SPEED * 2.0 * PI * delta;
+    if keyboard_input.pressed(input_map.right) {
+        rotation.y -= TURN_SPEED * TAU * delta;
     }
-    if keyboard_input.pressed(input_map.turn_r) {
-        rotation.y -= TURN_SPEED * 2.0 * PI * delta;
-    }
-
-    // Calculate rotations from mouse deltas
-    for motion in mouse_motion.read() {
-        rotation.y -= motion.delta.x * MOUSE_SENSITIVITY_X * TURN_SPEED * 2.0 * PI;
-        rotation.x -= motion.delta.y * MOUSE_SENSITIVITY_Y * TURN_SPEED * 2.0 * PI;
-    }
-
-
-    // Clamp rotation x
-    rotation.x = (current_rotation.x + rotation.x).clamp(
-        (-PI / 2.0  + CAMERA_TOP_DEADZONE).to_degrees(),
-        (PI / 2.0 - CAMERA_BOTTOM_DEADZONE).to_degrees());
 
     // Add current rotation to z/y axis
     rotation.z += current_rotation.z;
     rotation.y += current_rotation.y;
     
     // Normalize rotation
-    rotation %= 360.0;
+    rotation %= TAU;
 
     // Set current rotation
     player.set_rotation(rotation);
 
     // Create player rotation quaternion from rotation y value
-    let rotation_quat = Quat::from_rotation_y(rotation.y.to_radians());
-    
-    // Get camera rotation quaternion from rotation x value
-    let camera_rotation_quat = Quat::from_rotation_x(rotation.x.to_radians());
+    let rotation_quat = Quat::from_rotation_y(rotation.y);
 
     // Multiply local direction vector by player rotation quaternion
     direction = rotation_quat.mul_vec3(direction);
+    if !player.is_on_floor {
+        direction += GRAVITY;
+    }
 
     // Accelerate
-    let velocity = current_velocity + (delta * ACCELERATION * direction);
-    player.set_velocity(velocity);
+    let mut velocity = current_velocity + (delta * ACCELERATION * direction);
 
-    if direction == Vec3::ZERO {
-        // Decelerate
-        player.set_velocity(velocity.lerp(Vec3::ZERO, delta * DECELERATION));
+    if player.is_on_floor {
+        if keyboard_input.just_pressed(input_map.jump) {
+            velocity += JUMP_VELOCITY;
+        } else {
+            velocity = velocity.lerp(Vec3::ZERO, delta * DECELERATION);
+        }
     }
+    
+    player.set_velocity(velocity);
 
     // Set global position
     let global_position = player.get_location() + velocity;
@@ -127,12 +126,107 @@ pub fn move_player(
         rotation: rotation_quat,
         ..default()
     };
+}
 
-    // Apply camera transforms
-    *player_camera_transform = Transform {
-        // translation: CAMERA_OFFSET_VEC3, // use for first person so camera doesn't rotate around origin
-        translation: camera_rotation_quat.mul_vec3(CAMERA_OFFSET_VEC3),
-        rotation: camera_rotation_quat,
-        ..default()
+pub fn handle_player_camera(
+    mut mouse_motion: EventReader<MouseMotion>,
+    mut q_player_transform: Query<(&mut Player, &mut Transform), (
+        Without<PlayerCamera>, 
+        Without<PlayerMesh>,
+        Without<PlayerRigidBody>,
+    )>,
+    mut q_player_rigid_body_transform: Query<(&PlayerRigidBody, &mut Transform), (
+        Without<Player>, 
+        Without<PlayerCamera>,
+        Without<PlayerMesh>,
+    )>,
+    mut q_player_camera_transform: Query<(&mut PlayerCamera, &mut Transform), (
+        Without<Player>,
+        Without<PlayerMesh>,
+        Without<PlayerRigidBody>
+    )>,
+    time: Res<Time>,
+) {
+    let (player, _player_transform) = q_player_transform.single_mut();
+    let (mut player_camera, mut player_camera_transform) = q_player_camera_transform.single_mut();
+    let (_player_rigid_body, player_rigid_body_transform) = q_player_rigid_body_transform.single_mut();
+
+    let delta = time.delta().as_secs_f32();
+
+    let mut rotation = Vec3::ZERO;
+    let current_rotation = player_camera.rotation;
+
+    // Calculate rotations from mouse deltas
+    for motion in mouse_motion.read() {
+        rotation.y -= motion.delta.x * MOUSE_SENSITIVITY_X * TAU * delta;
+        rotation.x -= motion.delta.y * MOUSE_SENSITIVITY_Y * TAU * delta;
     }
+
+    // Clamp rotation x
+    rotation.x = (current_rotation.x + rotation.x).clamp(
+        -PI / 2.0  + CAMERA_TOP_DEADZONE,
+        PI / 2.0 - CAMERA_BOTTOM_DEADZONE
+    );
+
+    // Add current rotation to z/y axis
+    rotation.z += current_rotation.z;
+    rotation.y += current_rotation.y;
+    
+    // Normalize rotation
+    rotation %= TAU;
+
+    // Set current rotation
+    player_camera.rotation = rotation;
+    
+    // Get camera rotation quaternion from rotation x value
+    let camera_rotation_quat = Quat::from_euler(EulerRot::YXZ, rotation.y, rotation.x, 0.0);
+
+    if player.bailed {
+        // Apply camera transforms
+        *player_camera_transform = Transform {
+            translation: camera_rotation_quat.mul_vec3(
+                CAMERA_OFFSET_VEC3
+                + player_rigid_body_transform.translation
+                - BODY_OFFSET_VEC3
+            ),
+            rotation: camera_rotation_quat,
+            ..default()
+        };
+    } else {
+        // Apply camera transforms
+        *player_camera_transform = Transform {
+            // translation: CAMERA_OFFSET_VEC3, // use for first person so camera doesn't rotate around origin
+            translation: camera_rotation_quat.mul_vec3(CAMERA_OFFSET_VEC3),
+            rotation: camera_rotation_quat,
+            ..default()
+        }
+    }
+}
+
+pub fn handle_bailed_player_movement(
+    mut q_player_transform: Query<(&mut Player, &mut Transform), (
+        Without<PlayerCamera>, 
+        Without<PlayerMesh>,
+        Without<PlayerRigidBody>,
+    )>,
+    mut q_player_rigid_body_transform: Query<(&PlayerRigidBody, &mut Transform), (
+        Without<Player>, 
+        Without<PlayerCamera>,
+        Without<PlayerMesh>,
+    )>,
+    mut q_player_mesh_transform: Query<(&PlayerMesh, &mut Transform), (
+        Without<Player>, 
+        Without<PlayerCamera>, 
+        Without<PlayerRigidBody>
+    )>,
+) {
+    let (player, _player_transform) = q_player_transform.single_mut();
+    if !player.bailed {
+        return;
+    }
+    let (_player_mesh, mut player_mesh_transform) = q_player_mesh_transform.single_mut();
+    let (_player_rigid_body, player_rigid_body_transform) = q_player_rigid_body_transform.single_mut();
+
+    // Match mesh transform to rigid body
+    *player_mesh_transform = *player_rigid_body_transform;
 }

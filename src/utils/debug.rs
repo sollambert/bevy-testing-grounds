@@ -1,7 +1,7 @@
 use avian3d::prelude::{Collider, CollidingEntities};
 use bevy::prelude::*;
 
-use crate::entities::player::player::Player;
+use crate::{entities::player::player::{Player, PlayerRigidBody}, Game};
 
 #[derive(Component, Default)]
 pub struct DebugDisplay {
@@ -17,13 +17,18 @@ pub struct ColliderDebugDisplay;
 
 pub fn setup_debug_screen(
     mut commands: Commands,
+    game: Res<Game>
 ) {
+    let mut visibility = Visibility::Hidden;
+    if game.dev_mode {
+        visibility = Visibility::Visible;
+    }
     commands.spawn((
         DebugDisplay {
-            visibility: Visibility::Visible
+            visibility,
         },
         NodeBundle {
-            visibility: Visibility::Visible,
+            visibility,
             style: Style {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
@@ -47,7 +52,10 @@ pub fn update_debug_screen(
     mut q_player_debug_display: Query<Entity, With<PlayerDebugDisplay>>,
     mut q_key_press_debug_display: Query<Entity, With<KeyPressDebugDisplay>>,
     mut q_collider_debug_display: Query<Entity, With<ColliderDebugDisplay>>,
-    q_colliding_entities: Query<(Entity, &CollidingEntities), With<Collider>>
+    q_colliding_entities: Query<&CollidingEntities, (
+        With<Collider>,
+        With<PlayerRigidBody>
+    )>
 ) {
     let player = player.single_mut();
     let player_debug_display = q_player_debug_display.single_mut();
@@ -80,17 +88,16 @@ pub fn update_debug_screen(
     ));
 
     let mut colliders_string = String::new();
-    for (entity, colliding_entities) in &q_colliding_entities {
+    for colliding_entities in &q_colliding_entities {
         colliders_string += &format!(
-            "{:?} is colliding with: {:?}\n",
-            entity,
+            "Player is colliding with: {:?}\n",
             colliding_entities
         );
     }
 
     let colliders_string = colliders_string.trim();
 
-    // Create key display
+    // Create collider display
     commands.entity(collider_debug_display).insert(TextBundle::from_section(
         colliders_string,
         text_style.to_owned()

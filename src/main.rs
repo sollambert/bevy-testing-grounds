@@ -1,7 +1,7 @@
-use avian3d::{prelude::{AngularVelocity, Collider, Friction, Gravity, RigidBody}, PhysicsPlugins};
+use avian3d::{prelude::{AngularVelocity, Collider, CollisionLayers, Friction, LayerMask, PhysicsDebugPlugin, RigidBody}, PhysicsPlugins};
 use bevy::prelude::*;
-use controls::{controls::{handle_cursor, handle_key_window_functions}, player::move_player};
-use entities::player::player::Player;
+use controls::{controls::{handle_cursor, handle_debug_keys, handle_key_window_functions}, player::{handle_player_camera, handle_bailed_player_movement, handle_player_is_on_floor, handle_player_movement}};
+use entities::{player::player::{handle_player_bail, Player, PlayerBailEvent}, EntityCollisionLayers};
 use utils::debug::{setup_debug_screen, update_debug_screen};
 
 mod controls;
@@ -9,41 +9,73 @@ mod entities;
 mod utils;
 
 fn main() {
-    App::new()
-        .add_plugins((DefaultPlugins, PhysicsPlugins::default()))
-            .insert_resource(Gravity(Vec3::NEG_Y * 9.81))
-        .init_resource::<Game>()
+    let plugins = (DefaultPlugins,
+        PhysicsPlugins::default());
+    let mut app = App::new();
+    app.add_plugins(plugins);
+    if cfg!(debug_assertions) {
+        let debug_plugins = PhysicsDebugPlugin::default();
+        app.add_plugins(debug_plugins)
+            .add_systems(Startup, setup_debug_screen)
+            .add_systems(Update, handle_debug_keys)
+            .add_systems(Update, update_debug_screen);
+    }
+    app.init_resource::<Game>()
         .add_systems(Startup, setup)
-        .add_systems(Update,move_player)
+        .add_event::<PlayerBailEvent>()
+        .add_systems(Update,handle_player_is_on_floor)
+        .add_systems(Update,handle_player_camera)
+        .add_systems(Update,handle_player_movement)
+        .add_systems(Update,handle_bailed_player_movement)
+        .add_systems(Update, handle_player_bail)
         .add_systems(Update, handle_cursor)
         .add_systems(Update, handle_key_window_functions)
-        .add_systems(Update, update_debug_screen)
         .run();
 }
 
-#[derive(Resource, Default)]
-struct Game;
+#[derive(Resource)]
+struct Game {
+    dev_mode: bool
+}
+
+impl Default for Game {
+    fn default() -> Game {
+        let mut dev_mode = false;
+        if cfg!(debug_assertions) {
+            dev_mode = true;
+        }
+        Game {
+            dev_mode
+        }
+    }
+}
 
 fn setup(
     mut commands: Commands,
-    mut _asset_server: Res<AssetServer>,
+    _asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    setup_debug_screen(commands.reborrow());
     Player::spawn(commands.reborrow(), 
         meshes.reborrow(),
         materials.reborrow(),
-        Some(Vec3::new(0.0, 0.0, 10.0)),
+        Some(Vec3::new(0.0, 0.25, 5.0)),
         None);
+
+    // // spawn generator
+    // commands.spawn(SceneBundle {
+    //     scene: asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/Generator.glb")),
+    //     ..default()
+    // });
     
     // Static physics object with a collision shape
     commands.spawn((
         RigidBody::Static,
-        Collider::cylinder(20.0, 0.1),
+        Collider::cylinder(200.0, 0.1),
+        CollisionLayers::new(EntityCollisionLayers::Ground, LayerMask::ALL),
         Friction::new(0.5),
         PbrBundle {
-            mesh: meshes.add(Cylinder::new(20.0, 0.1)),
+            mesh: meshes.add(Cylinder::new(200.0, 0.1)),
             material: materials.add(Color::WHITE),
             transform: Transform::from_xyz(0.0, -0.05, 0.0),
             ..default()
@@ -51,17 +83,20 @@ fn setup(
     ));
 
     // Dynamic physics object with a collision shape and initial angular velocity
-    commands.spawn((
-        RigidBody::Dynamic,
-        Collider::cuboid(1.0, 1.0, 1.0),
-        AngularVelocity(Vec3::new(2.5, 3.5, 1.5)),
-        PbrBundle {
-            mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            material: materials.add(Color::srgb_u8(124, 144, 255)),
-            transform: Transform::from_xyz(0.0, 4.0, 0.0),
-            ..default()
-        },
-    ));
+    for _i in 0..10 {
+        commands.spawn((
+            RigidBody::Dynamic,
+            Collider::cuboid(1.0, 1.0, 1.0),
+            CollisionLayers::new(EntityCollisionLayers::Props, LayerMask::ALL),
+            AngularVelocity(Vec3::new(2.5, 3.5, 1.5)),
+            PbrBundle {
+                mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+                material: materials.add(Color::srgb_u8(124, 144, 255)),
+                transform: Transform::from_xyz(0.0, 4.0, 0.0),
+                ..default()
+            },
+        ));
+    }
 
     // Light
     commands.spawn(PointLightBundle {

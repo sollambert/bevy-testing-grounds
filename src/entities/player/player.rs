@@ -1,26 +1,44 @@
 use std::fmt;
 
-use avian3d::prelude::{Collider, RigidBody};
+use avian3d::prelude::{AngularVelocity, Collider, CollisionLayers, Dominance, LayerMask, LinearVelocity, PhysicsLayer, RayCaster, RigidBody, SpatialQueryFilter};
 use bevy::{math::*, prelude::*};
 
-pub const CAMERA_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.75, 10.0);
+use crate::entities::EntityCollisionLayers;
 
+pub const CAMERA_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.75, 10.0);
+pub const BODY_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.0, 0.0);
 
 #[derive(Component, Default)]
 pub struct Player {
+    pub bailed: bool,
+    pub is_on_floor: bool,
     location: Vec3,
     velocity: Vec3,
     rotation: Vec3,
 }
 
 #[derive(Component)]
-pub struct PlayerCamera;
+pub struct PlayerCamera {
+    pub rotation: Vec3,
+}
 
 #[derive(Component)]
 pub struct PlayerRigidBody;
 
 #[derive(Component)]
 pub struct PlayerMesh;
+
+#[derive(Component)]
+pub struct PlayerFloorRay;
+
+#[derive(Component)]
+pub struct PlayerInteractRay;
+
+#[derive(Component)]
+pub struct PlayerStepRay;
+
+#[derive(Event)]
+pub struct PlayerBailEvent(pub (Entity, bool));
 
 impl Player {
     pub fn get_location(&self) -> Vec3 {
@@ -67,6 +85,8 @@ impl Player {
                 ..default()
             },
             Player {
+                bailed: false,
+                is_on_floor: false,
                 location: spawn_location,
                 rotation: spawn_rotation,
                 velocity: Vec3::ZERO,
@@ -74,11 +94,12 @@ impl Player {
         )).with_children(|parent| {
             // Build child entities
             parent.spawn((
-                PlayerCamera,
+                PlayerCamera {
+                    rotation: Vec3::ZERO
+                },
                 Camera3dBundle {
                     transform: Transform::from_translation(CAMERA_OFFSET_VEC3),
                     projection: PerspectiveProjection {
-                        // fov: 70.0_f32.to_radians(),
                         ..default()
                     }
                     .into(),
@@ -89,8 +110,13 @@ impl Player {
                 PlayerRigidBody,
                 RigidBody::Kinematic,
                 Collider::capsule(0.5, 1.0),
+                CollisionLayers::new(EntityCollisionLayers::Player, [
+                    EntityCollisionLayers::Ground,
+                    EntityCollisionLayers::Props
+                ]),
+                Dominance(5),
                 SpatialBundle {
-                    transform: Transform::from_xyz(0.0, 1.0, 0.0),
+                    transform: Transform::from_translation(BODY_OFFSET_VEC3),
                     ..default()
                 }
             ));
@@ -99,16 +125,94 @@ impl Player {
                 PbrBundle {
                     mesh: meshes.add(Capsule3d::new(0.5, 1.0)),
                     material: materials.add(Color::srgb_u8(124, 144, 255)),
-                    transform: Transform::from_xyz(0.0, 1.0, 0.0),
+                    transform: Transform::from_translation(BODY_OFFSET_VEC3),
                     ..default()
-                }
+                },
+            ));
+            parent.spawn((
+                PlayerFloorRay,
+                RayCaster::new(Vec3::new(0.0, 1.0, 0.0), Dir3::NEG_Y)
+                    // .with_max_hits(2)
+                    .with_max_time_of_impact(1.15)
+                    .with_query_filter(
+                        SpatialQueryFilter {
+                            mask: LayerMask(EntityCollisionLayers::Ground.to_bits()),
+                            ..default()
+                        }),
+            ));
+            parent.spawn((
+                PlayerInteractRay,
+                RayCaster::new(Vec3::new(0.0, 1.0, 0.0), Dir3::NEG_Z)
+                    // .with_max_hits(2)
+                    .with_max_time_of_impact(2.0)
+                    .with_query_filter(
+                        SpatialQueryFilter {
+                            mask: LayerMask(EntityCollisionLayers::Interaction.to_bits()),
+                            ..default()
+                        }),
             ));
         }).id()
     }
 }
 
+pub fn handle_player_bail(
+    mut commands: Commands,
+    mut ev_player_bail: EventReader<PlayerBailEvent>,
+    mut q_player_transform: Query<(&mut Player, &mut Transform), (
+        Without<PlayerCamera>, 
+        Without<PlayerMesh>,
+        Without<PlayerRigidBody>,
+    )>,
+    mut q_player_rigid_body_transform: Query<(&PlayerRigidBody, Entity, &mut Transform, &mut GlobalTransform), (
+        Without<Player>, 
+        Without<PlayerCamera>,
+        Without<PlayerMesh>,
+    )>,
+    mut q_player_mesh_transform: Query<(&PlayerMesh, &mut Transform), (
+        Without<Player>, 
+        Without<PlayerCamera>, 
+        Without<PlayerRigidBody>
+    )>,
+    time: Res<Time>,
+) {
+    let (mut player, mut _player_transform) = q_player_transform.single_mut();
+    let (_player_mesh, mut player_mesh_transform) = q_player_mesh_transform.single_mut();
+    let (_player_rigid_body, player_rigid_body_entity, mut player_rigid_body_transform, player_rigid_body_global_transform) = q_player_rigid_body_transform.single_mut();
+    let mut player_rigid_body_entity = commands.entity(player_rigid_body_entity);
+    let delta = time.delta().as_secs_f32();
+    for ev in ev_player_bail.read() {
+        let bailed = ev.0.1;
+        player.bailed = bailed;
+        if bailed {
+            player_rigid_body_entity.insert(RigidBody::Dynamic);
+            let current_velocity = player.get_velocity();
+            println!("Player bailed! {}", current_velocity);
+
+            // Create player rotation quaternion from rotation y value
+            let body_velocity = current_velocity / delta;
+            player.set_velocity(Vec3::ZERO);
+            player_rigid_body_entity.insert(LinearVelocity(body_velocity));
+        } else {
+            println!("Player standing up!");
+            player_rigid_body_entity.insert(RigidBody::Kinematic);
+            player_rigid_body_entity.insert(AngularVelocity(Vec3::ZERO));
+            player_rigid_body_entity.insert(LinearVelocity(Vec3::ZERO));
+            player.set_location(player_rigid_body_global_transform.translation() - BODY_OFFSET_VEC3);
+            *player_rigid_body_transform = Transform::from_translation(BODY_OFFSET_VEC3);
+            *player_mesh_transform = Transform::from_translation(BODY_OFFSET_VEC3);
+        }
+    }
+}
+
 impl fmt::Display for Player {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Location: {:.4}\nRotation: {:.4}\nVelocity: {:.4}", self.location, self.rotation, self.velocity)
+        write!(f, "Location: {:.4}\nYaw: {:.4}, Pitch: {:.4}, Roll: {:.4}\nVelocity: {:.4}\nBailed: {}\nOn Floor: {}",
+            self.location,
+            self.rotation.y.to_degrees(),
+            self.rotation.x.to_degrees(),
+            self.rotation.z.to_degrees(),
+            self.velocity,
+            self.bailed,
+            self.is_on_floor)
     }
 }
