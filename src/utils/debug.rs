@@ -1,7 +1,7 @@
 use avian3d::prelude::{Collider, CollidingEntities};
 use bevy::prelude::*;
 
-use crate::{entities::player::player::{Player, PlayerRigidBody}, Game};
+use crate::{entities::player::player::{Player, PlayerBody}, Game};
 
 #[derive(Component, Default)]
 pub struct DebugDisplay {
@@ -54,7 +54,7 @@ pub fn update_debug_screen(
     mut q_collider_debug_display: Query<Entity, With<ColliderDebugDisplay>>,
     q_colliding_entities: Query<&CollidingEntities, (
         With<Collider>,
-        With<PlayerRigidBody>
+        With<PlayerBody>
     )>
 ) {
     let player = player.single_mut();

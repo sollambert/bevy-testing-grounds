@@ -23,10 +23,7 @@ pub struct PlayerCamera {
 }
 
 #[derive(Component)]
-pub struct PlayerRigidBody;
-
-#[derive(Component)]
-pub struct PlayerMesh;
+pub struct PlayerBody;
 
 #[derive(Component)]
 pub struct PlayerFloorRay;
@@ -107,7 +104,7 @@ impl Player {
                 }
             ));
             parent.spawn((
-                PlayerRigidBody,
+                PlayerBody,
                 RigidBody::Kinematic,
                 Collider::capsule(0.5, 1.0),
                 CollisionLayers::new(EntityCollisionLayers::Player, [
@@ -115,13 +112,6 @@ impl Player {
                     EntityCollisionLayers::Props
                 ]),
                 Dominance(5),
-                SpatialBundle {
-                    transform: Transform::from_translation(BODY_OFFSET_VEC3),
-                    ..default()
-                }
-            ));
-            parent.spawn((
-                PlayerMesh,
                 PbrBundle {
                     mesh: meshes.add(Capsule3d::new(0.5, 1.0)),
                     material: materials.add(Color::srgb_u8(124, 144, 255)),
@@ -160,46 +150,37 @@ pub fn handle_player_bail(
     mut ev_player_bail: EventReader<PlayerBailEvent>,
     mut q_player_transform: Query<(&mut Player, &mut Transform), (
         Without<PlayerCamera>, 
-        Without<PlayerMesh>,
-        Without<PlayerRigidBody>,
+        Without<PlayerBody>,
     )>,
-    mut q_player_rigid_body_transform: Query<(&PlayerRigidBody, Entity, &mut Transform, &mut GlobalTransform), (
+    mut q_player_body_transform: Query<(&PlayerBody, Entity, &mut Transform, &mut GlobalTransform), (
         Without<Player>, 
         Without<PlayerCamera>,
-        Without<PlayerMesh>,
-    )>,
-    mut q_player_mesh_transform: Query<(&PlayerMesh, &mut Transform), (
-        Without<Player>, 
-        Without<PlayerCamera>, 
-        Without<PlayerRigidBody>
     )>,
     time: Res<Time>,
 ) {
     let (mut player, mut _player_transform) = q_player_transform.single_mut();
-    let (_player_mesh, mut player_mesh_transform) = q_player_mesh_transform.single_mut();
-    let (_player_rigid_body, player_rigid_body_entity, mut player_rigid_body_transform, player_rigid_body_global_transform) = q_player_rigid_body_transform.single_mut();
-    let mut player_rigid_body_entity = commands.entity(player_rigid_body_entity);
+    let (_player_body, player_body_entity, mut player_body_transform, player_body_global_transform) = q_player_body_transform.single_mut();
+    let mut player_body_entity = commands.entity(player_body_entity);
     let delta = time.delta().as_secs_f32();
     for ev in ev_player_bail.read() {
         let bailed = ev.0.1;
         player.bailed = bailed;
         if bailed {
-            player_rigid_body_entity.insert(RigidBody::Dynamic);
+            player_body_entity.insert(RigidBody::Dynamic);
             let current_velocity = player.get_velocity();
             println!("Player bailed! {}", current_velocity);
 
             // Create player rotation quaternion from rotation y value
             let body_velocity = current_velocity / delta;
             player.set_velocity(Vec3::ZERO);
-            player_rigid_body_entity.insert(LinearVelocity(body_velocity));
+            player_body_entity.insert(LinearVelocity(body_velocity));
         } else {
             println!("Player standing up!");
-            player_rigid_body_entity.insert(RigidBody::Kinematic);
-            player_rigid_body_entity.insert(AngularVelocity(Vec3::ZERO));
-            player_rigid_body_entity.insert(LinearVelocity(Vec3::ZERO));
-            player.set_location(player_rigid_body_global_transform.translation() - BODY_OFFSET_VEC3);
-            *player_rigid_body_transform = Transform::from_translation(BODY_OFFSET_VEC3);
-            *player_mesh_transform = Transform::from_translation(BODY_OFFSET_VEC3);
+            player_body_entity.insert(RigidBody::Kinematic);
+            player_body_entity.insert(AngularVelocity(Vec3::ZERO));
+            player_body_entity.insert(LinearVelocity(Vec3::ZERO));
+            player.set_location(player_body_global_transform.translation() - BODY_OFFSET_VEC3);
+            *player_body_transform = Transform::from_translation(BODY_OFFSET_VEC3);
         }
     }
 }

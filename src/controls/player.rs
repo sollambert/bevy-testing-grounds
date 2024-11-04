@@ -2,7 +2,7 @@ use avian3d::{math::{PI, TAU}, prelude::{RayCaster, RayHits}};
 use bevy::{input::*, prelude::*};
 use mouse::MouseMotion;
 
-use crate::entities::player::player::{Player, PlayerCamera, PlayerFloorRay, PlayerMesh, PlayerRigidBody, BODY_OFFSET_VEC3, CAMERA_OFFSET_VEC3};
+use crate::entities::player::player::{Player, PlayerCamera, PlayerFloorRay, PlayerBody, BODY_OFFSET_VEC3, CAMERA_OFFSET_VEC3};
 
 use super::controls::InputMap;
 
@@ -24,6 +24,9 @@ const MOUSE_SENSITIVITY_Y: f32 = 0.002;
 const CAMERA_TOP_DEADZONE: f32 = PI / 4.0;
 const CAMERA_BOTTOM_DEADZONE: f32 = PI / 4.0;
 
+const RIGHT_LEAN_MAX_ANGLE: f32 = PI / 4.0;
+const LEFT_LEAN_MAX_ANGLE: f32 = -(PI / 4.0);
+
 pub fn handle_player_is_on_floor(
     mut q_player: Query<&mut Player>,
     q_player_floor_ray: Query<(&RayCaster, &RayHits), With<PlayerFloorRay>>,
@@ -34,7 +37,9 @@ pub fn handle_player_is_on_floor(
     for (player_floor_caster, player_floor_hits) in q_player_floor_ray.iter() {
         for floor_hit in player_floor_hits.iter() {
             player.is_on_floor = true;
-            player.set_velocity(current_velocity * Vec3::new(1.0, 0.0, 1.0));
+            if current_velocity.y < 0.0 {
+                player.set_velocity(current_velocity * Vec3::new(1.0, 0.0, 1.0));
+            }
             current_location.y += player_floor_caster.max_time_of_impact - floor_hit.time_of_impact - 0.15;
             player.set_location(current_location);
             return;
@@ -132,24 +137,21 @@ pub fn handle_player_camera(
     mut mouse_motion: EventReader<MouseMotion>,
     mut q_player_transform: Query<(&mut Player, &mut Transform), (
         Without<PlayerCamera>, 
-        Without<PlayerMesh>,
-        Without<PlayerRigidBody>,
+        Without<PlayerBody>,
     )>,
-    mut q_player_rigid_body_transform: Query<(&PlayerRigidBody, &mut Transform), (
+    mut q_player_body_transform: Query<(&PlayerBody, &mut Transform), (
         Without<Player>, 
         Without<PlayerCamera>,
-        Without<PlayerMesh>,
     )>,
     mut q_player_camera_transform: Query<(&mut PlayerCamera, &mut Transform), (
         Without<Player>,
-        Without<PlayerMesh>,
-        Without<PlayerRigidBody>
+        Without<PlayerBody>,
     )>,
     time: Res<Time>,
 ) {
     let (player, _player_transform) = q_player_transform.single_mut();
     let (mut player_camera, mut player_camera_transform) = q_player_camera_transform.single_mut();
-    let (_player_rigid_body, player_rigid_body_transform) = q_player_rigid_body_transform.single_mut();
+    let (_player_body, player_body_transform) = q_player_body_transform.single_mut();
 
     let delta = time.delta().as_secs_f32();
 
@@ -186,7 +188,7 @@ pub fn handle_player_camera(
         *player_camera_transform = Transform {
             translation: camera_rotation_quat.mul_vec3(
                 CAMERA_OFFSET_VEC3
-                + player_rigid_body_transform.translation
+                + player_body_transform.translation
                 - BODY_OFFSET_VEC3
             ),
             rotation: camera_rotation_quat,
@@ -206,27 +208,17 @@ pub fn handle_player_camera(
 pub fn handle_bailed_player_movement(
     mut q_player_transform: Query<(&mut Player, &mut Transform), (
         Without<PlayerCamera>, 
-        Without<PlayerMesh>,
-        Without<PlayerRigidBody>,
+        Without<PlayerBody>,
     )>,
-    mut q_player_rigid_body_transform: Query<(&PlayerRigidBody, &mut Transform), (
+    mut q_player_body_transform: Query<(&PlayerBody, &mut Transform), (
         Without<Player>, 
         Without<PlayerCamera>,
-        Without<PlayerMesh>,
-    )>,
-    mut q_player_mesh_transform: Query<(&PlayerMesh, &mut Transform), (
-        Without<Player>, 
-        Without<PlayerCamera>, 
-        Without<PlayerRigidBody>
     )>,
 ) {
     let (player, _player_transform) = q_player_transform.single_mut();
     if !player.bailed {
         return;
     }
-    let (_player_mesh, mut player_mesh_transform) = q_player_mesh_transform.single_mut();
-    let (_player_rigid_body, player_rigid_body_transform) = q_player_rigid_body_transform.single_mut();
-
-    // Match mesh transform to rigid body
-    *player_mesh_transform = *player_rigid_body_transform;
+    let (_player_body, _player_body_transform) = q_player_body_transform.single_mut();
+    // todo!("Implement minor movement adjustments when player is bailed.")
 }
