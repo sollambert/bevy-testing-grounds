@@ -81,6 +81,18 @@ fn setup(
             ..default()
         },
     ));
+    commands.spawn((
+        RigidBody::Static,
+        Collider::cuboid(10.0, 10.0, 10.0),
+        CollisionLayers::new(EntityCollisionLayers::Ground, LayerMask::ALL),
+        AngularVelocity(Vec3::new(2.5, 3.5, 1.5)),
+        PbrBundle {
+            mesh: meshes.add(Cuboid::new(10.0, 10.0, 10.0)),
+            material: materials.add(Color::srgb_u8(124, 144, 255)),
+            transform: Transform::from_xyz(0.0, 5.0, -20.0),
+            ..default()
+        },
+    ));
 
     // Dynamic physics object with a collision shape and initial angular velocity
     for _i in 0..10 {

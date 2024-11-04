@@ -5,7 +5,7 @@ use bevy::{math::*, prelude::*};
 
 use crate::entities::EntityCollisionLayers;
 
-pub const CAMERA_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.75, 10.0);
+pub const CAMERA_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.0, 10.0);
 pub const BODY_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.0, 0.0);
 
 #[derive(Component, Default)]
@@ -22,8 +22,13 @@ pub struct PlayerCamera {
     pub rotation: Vec3,
 }
 
+#[derive(Component, Default)]
+pub struct PlayerBody {
+    pub lean: f32
+}
+
 #[derive(Component)]
-pub struct PlayerBody;
+pub struct PlayerCameraRay;
 
 #[derive(Component)]
 pub struct PlayerFloorRay;
@@ -101,10 +106,24 @@ impl Player {
                     }
                     .into(),
                     ..default()
-                }
+                },
             ));
             parent.spawn((
-                PlayerBody,
+                PlayerCameraRay,
+                RayCaster::new(
+                    CAMERA_OFFSET_VEC3, 
+                    Dir3::from_xyz(-CAMERA_OFFSET_VEC3.x, 0.0, -CAMERA_OFFSET_VEC3.z).unwrap()
+                )
+                .with_max_time_of_impact(CAMERA_OFFSET_VEC3.z)
+                .with_query_filter(
+                    SpatialQueryFilter {
+                        mask: LayerMask(EntityCollisionLayers::Ground.to_bits()),
+                        ..default()
+                    }
+                )
+            ));
+            parent.spawn((
+                PlayerBody::default(),
                 RigidBody::Kinematic,
                 Collider::capsule(0.5, 1.0),
                 CollisionLayers::new(EntityCollisionLayers::Player, [
@@ -123,7 +142,7 @@ impl Player {
                 PlayerFloorRay,
                 RayCaster::new(Vec3::new(0.0, 1.0, 0.0), Dir3::NEG_Y)
                     // .with_max_hits(2)
-                    .with_max_time_of_impact(1.15)
+                    .with_max_time_of_impact(1.)
                     .with_query_filter(
                         SpatialQueryFilter {
                             mask: LayerMask(EntityCollisionLayers::Ground.to_bits()),
@@ -152,14 +171,14 @@ pub fn handle_player_bail(
         Without<PlayerCamera>, 
         Without<PlayerBody>,
     )>,
-    mut q_player_body_transform: Query<(&PlayerBody, Entity, &mut Transform, &mut GlobalTransform), (
+    mut q_player_body_transform: Query<(&mut PlayerBody, Entity, &mut Transform, &mut GlobalTransform), (
         Without<Player>, 
         Without<PlayerCamera>,
     )>,
     time: Res<Time>,
 ) {
     let (mut player, mut _player_transform) = q_player_transform.single_mut();
-    let (_player_body, player_body_entity, mut player_body_transform, player_body_global_transform) = q_player_body_transform.single_mut();
+    let (mut player_body, player_body_entity, mut player_body_transform, player_body_global_transform) = q_player_body_transform.single_mut();
     let mut player_body_entity = commands.entity(player_body_entity);
     let delta = time.delta().as_secs_f32();
     for ev in ev_player_bail.read() {
@@ -179,8 +198,8 @@ pub fn handle_player_bail(
             player_body_entity.insert(RigidBody::Kinematic);
             player_body_entity.insert(AngularVelocity(Vec3::ZERO));
             player_body_entity.insert(LinearVelocity(Vec3::ZERO));
+            player_body.lean = 0.0;
             player.set_location(player_body_global_transform.translation() - BODY_OFFSET_VEC3);
-            *player_body_transform = Transform::from_translation(BODY_OFFSET_VEC3);
         }
     }
 }

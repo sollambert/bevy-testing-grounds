@@ -1,8 +1,10 @@
+use std::{thread, time::Duration};
+
 use avian3d::{math::{PI, TAU}, prelude::{RayCaster, RayHits}};
-use bevy::{input::*, prelude::*};
+use bevy::{input::*, math::VectorSpace, prelude::*};
 use mouse::MouseMotion;
 
-use crate::entities::player::player::{Player, PlayerCamera, PlayerFloorRay, PlayerBody, BODY_OFFSET_VEC3, CAMERA_OFFSET_VEC3};
+use crate::entities::player::player::{Player, PlayerBody, PlayerCamera, PlayerCameraRay, PlayerFloorRay, BODY_OFFSET_VEC3, CAMERA_OFFSET_VEC3};
 
 use super::controls::InputMap;
 
@@ -24,24 +26,28 @@ const MOUSE_SENSITIVITY_Y: f32 = 0.002;
 const CAMERA_TOP_DEADZONE: f32 = PI / 4.0;
 const CAMERA_BOTTOM_DEADZONE: f32 = PI / 4.0;
 
-const RIGHT_LEAN_MAX_ANGLE: f32 = PI / 4.0;
-const LEFT_LEAN_MAX_ANGLE: f32 = -(PI / 4.0);
+const LEAN_SPEED: f32 = 2.0;
+const LEFT_LEAN_MAX_ANGLE: f32 = PI / 8.0;
+const RIGHT_LEAN_MAX_ANGLE: f32 = -PI / 8.0;
 
 pub fn handle_player_is_on_floor(
     mut q_player: Query<&mut Player>,
-    q_player_floor_ray: Query<(&RayCaster, &RayHits), With<PlayerFloorRay>>,
+    mut q_player_floor_ray: Query<(&RayCaster, &RayHits), With<PlayerFloorRay>>,
 ) {
     let mut player = q_player.single_mut();
     let current_velocity = player.get_velocity();
     let mut current_location = player.get_location();
-    for (player_floor_caster, player_floor_hits) in q_player_floor_ray.iter() {
+    for (player_floor_caster, player_floor_hits) in q_player_floor_ray.iter_mut() {
         for floor_hit in player_floor_hits.iter() {
+            let max_time_of_impact = player_floor_caster.max_time_of_impact;
             player.is_on_floor = true;
             if current_velocity.y < 0.0 {
                 player.set_velocity(current_velocity * Vec3::new(1.0, 0.0, 1.0));
             }
-            current_location.y += player_floor_caster.max_time_of_impact - floor_hit.time_of_impact - 0.15;
-            player.set_location(current_location);
+            if (max_time_of_impact - floor_hit.time_of_impact).abs() > 0.01 {
+                current_location.y += max_time_of_impact - floor_hit.time_of_impact;
+                player.set_location(current_location);
+            }
             return;
         }
     }
@@ -52,17 +58,23 @@ pub fn handle_player_is_on_floor(
 pub fn handle_player_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut q_player: Query<(&mut Player, &mut Transform)>,
+    mut q_player_body_transform: Query<(&mut PlayerBody, Entity, &mut Transform, &mut GlobalTransform), (
+        Without<Player>, 
+        Without<PlayerCamera>,
+    )>,
     time: Res<Time>,
 ) {
     let (mut player, mut player_transform) = q_player.single_mut();
     if player.bailed {
         return;
     }
+    let (mut player_body, player_body_entity, mut player_body_transform, player_body_global_transform) = q_player_body_transform.single_mut();
 
     // Create delta from 
     let delta = time.delta().as_secs_f32();
     let current_velocity = player.get_velocity();
     let current_rotation = player.get_rotation();
+    let mut current_lean = player_body.lean;
 
     // Initialize vectors
     let mut direction = Vec3::ZERO;
@@ -84,10 +96,16 @@ pub fn handle_player_movement(
     // Turn player
     if keyboard_input.pressed(input_map.left) {
         rotation.y += TURN_SPEED * TAU * delta;
+        current_lean = current_lean.lerp(LEFT_LEAN_MAX_ANGLE, LEAN_SPEED * delta);
     }
-    if keyboard_input.pressed(input_map.right) {
+    else if keyboard_input.pressed(input_map.right) {
         rotation.y -= TURN_SPEED * TAU * delta;
+        current_lean = current_lean.lerp(RIGHT_LEAN_MAX_ANGLE, LEAN_SPEED * delta);
+    } else {
+        current_lean = current_lean.lerp(0.0, LEAN_SPEED * delta);
     }
+
+    player_body.lean = current_lean;
 
     // Add current rotation to z/y axis
     rotation.z += current_rotation.z;
@@ -101,6 +119,8 @@ pub fn handle_player_movement(
 
     // Create player rotation quaternion from rotation y value
     let rotation_quat = Quat::from_rotation_y(rotation.y);
+
+    let player_body_rotation_quat = Quat::from_rotation_z(player_body.lean);
 
     // Multiply local direction vector by player rotation quaternion
     direction = rotation_quat.mul_vec3(direction);
@@ -131,27 +151,42 @@ pub fn handle_player_movement(
         rotation: rotation_quat,
         ..default()
     };
+    *player_body_transform = Transform {
+        translation: BODY_OFFSET_VEC3,
+        rotation: player_body_rotation_quat,
+        ..default()
+    }
 }
 
 pub fn handle_player_camera(
     mut mouse_motion: EventReader<MouseMotion>,
     mut q_player_transform: Query<(&mut Player, &mut Transform), (
-        Without<PlayerCamera>, 
         Without<PlayerBody>,
+        Without<PlayerCamera>, 
+        Without<PlayerCameraRay>,
     )>,
     mut q_player_body_transform: Query<(&PlayerBody, &mut Transform), (
         Without<Player>, 
         Without<PlayerCamera>,
+        Without<PlayerCameraRay>,
     )>,
     mut q_player_camera_transform: Query<(&mut PlayerCamera, &mut Transform), (
         Without<Player>,
         Without<PlayerBody>,
+        Without<PlayerCameraRay>,
+    )>,
+    mut q_player_camera_ray: Query<(&mut RayCaster, Option<&RayHits>),(
+        With<PlayerCameraRay>,
+        Without<Player>,
+        Without<PlayerBody>,
+        Without<PlayerCamera>,
     )>,
     time: Res<Time>,
 ) {
     let (player, _player_transform) = q_player_transform.single_mut();
     let (mut player_camera, mut player_camera_transform) = q_player_camera_transform.single_mut();
     let (_player_body, player_body_transform) = q_player_body_transform.single_mut();
+    let (mut player_camera_caster, player_camera_hits) = q_player_camera_ray.single_mut();
 
     let delta = time.delta().as_secs_f32();
 
@@ -179,29 +214,63 @@ pub fn handle_player_camera(
 
     // Set current rotation
     player_camera.rotation = rotation;
+
+    let mut camera_offset = CAMERA_OFFSET_VEC3;
     
     // Get camera rotation quaternion from rotation x value
     let camera_rotation_quat = Quat::from_euler(EulerRot::YXZ, rotation.y, rotation.x, 0.0);
 
+
+    // Check if camera is colliding 
+    if let Some(player_camera_hits) = player_camera_hits {
+        if let Some(camera_hit) = player_camera_hits.iter().next() {
+            camera_offset.z = player_camera_caster.max_time_of_impact - camera_hit.time_of_impact - 1.5;
+            camera_offset.y += 0.5;
+        }
+    }
+
+    let camera_offset_rotation_applied = camera_rotation_quat.mul_vec3(camera_offset);
+    let camera_ray_offset_rotation_applied = camera_rotation_quat.mul_vec3(CAMERA_OFFSET_VEC3);
+
+    println!("Camera offset: {}", camera_offset);
+
     if player.bailed {
+        let camera_offset_rotation_applied = camera_rotation_quat.mul_vec3(
+            camera_offset
+            - BODY_OFFSET_VEC3
+        );
+        let camera_ray_offset_rotation_applied = camera_rotation_quat.mul_vec3(
+            CAMERA_OFFSET_VEC3
+            - BODY_OFFSET_VEC3
+        );
         // Apply camera transforms
         *player_camera_transform = Transform {
-            translation: camera_rotation_quat.mul_vec3(
-                CAMERA_OFFSET_VEC3
-                + player_body_transform.translation
-                - BODY_OFFSET_VEC3
-            ),
+            translation: player_body_transform.translation + camera_offset_rotation_applied,
             rotation: camera_rotation_quat,
             ..default()
         };
+        // Apply camera ray transforms
+        player_camera_caster.origin = player_body_transform.translation + camera_ray_offset_rotation_applied;
+        player_camera_caster.direction = Dir3::from_xyz(
+            -camera_ray_offset_rotation_applied.x, 
+            -camera_ray_offset_rotation_applied.y,
+            -camera_ray_offset_rotation_applied.z
+        ).unwrap();
     } else {
         // Apply camera transforms
         *player_camera_transform = Transform {
             // translation: CAMERA_OFFSET_VEC3, // use for first person so camera doesn't rotate around origin
-            translation: camera_rotation_quat.mul_vec3(CAMERA_OFFSET_VEC3),
+            translation: camera_offset_rotation_applied,
             rotation: camera_rotation_quat,
             ..default()
-        }
+        };
+        // Apply camera ray transforms
+        player_camera_caster.origin = camera_ray_offset_rotation_applied;
+        player_camera_caster.direction = Dir3::from_xyz(
+            -camera_ray_offset_rotation_applied.x, 
+            -camera_ray_offset_rotation_applied.y + 1.0,
+            -camera_ray_offset_rotation_applied.z
+        ).unwrap();
     }
 }
 
