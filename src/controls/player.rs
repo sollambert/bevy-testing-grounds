@@ -4,7 +4,7 @@ use avian3d::{math::{PI, TAU}, prelude::{RayCaster, RayHits}};
 use bevy::{input::*, math::VectorSpace, prelude::*};
 use mouse::MouseMotion;
 
-use crate::entities::player::player::{Player, PlayerBody, PlayerCamera, PlayerCameraRay, PlayerFloorRay, BODY_OFFSET_VEC3, CAMERA_OFFSET_VEC3};
+use crate::entities::player::player::{Player, PlayerBody, PlayerCamera, PlayerCameraRay, PlayerFloorRay, BODY_OFFSET_VEC3, CAMERA_OFFSET_VEC3, CAMERA_RAY_OFFSET_VEC3};
 
 use super::controls::InputMap;
 
@@ -170,7 +170,7 @@ pub fn handle_player_camera(
         Without<PlayerCamera>,
         Without<PlayerCameraRay>,
     )>,
-    mut q_player_camera_transform: Query<(&mut PlayerCamera, &mut Transform), (
+    mut q_player_camera_transform: Query<(&mut PlayerCamera, &mut Transform, &mut GlobalTransform), (
         Without<Player>,
         Without<PlayerBody>,
         Without<PlayerCameraRay>,
@@ -184,7 +184,7 @@ pub fn handle_player_camera(
     time: Res<Time>,
 ) {
     let (player, _player_transform) = q_player_transform.single_mut();
-    let (mut player_camera, mut player_camera_transform) = q_player_camera_transform.single_mut();
+    let (mut player_camera, mut player_camera_transform, mut player_camera_global_transform) = q_player_camera_transform.single_mut();
     let (_player_body, player_body_transform) = q_player_body_transform.single_mut();
     let (mut player_camera_caster, player_camera_hits) = q_player_camera_ray.single_mut();
 
@@ -224,37 +224,34 @@ pub fn handle_player_camera(
     // Check if camera is colliding 
     if let Some(player_camera_hits) = player_camera_hits {
         if let Some(camera_hit) = player_camera_hits.iter().next() {
-            camera_offset.z = player_camera_caster.max_time_of_impact - camera_hit.time_of_impact - 1.5;
-            camera_offset.y += 0.5;
+            camera_offset = camera_offset.lerp(CAMERA_RAY_OFFSET_VEC3, 1.0 - ((camera_hit.time_of_impact - 1.0) / player_camera_caster.max_time_of_impact));
         }
     }
 
     let camera_offset_rotation_applied = camera_rotation_quat.mul_vec3(camera_offset);
-    let camera_ray_offset_rotation_applied = camera_rotation_quat.mul_vec3(CAMERA_OFFSET_VEC3);
+    let default_camera_offset_with_rotation = camera_rotation_quat.mul_vec3(CAMERA_OFFSET_VEC3);
 
-    println!("Camera offset: {}", camera_offset);
+    println!("Camera offset: {}", camera_offset_rotation_applied);
 
     if player.bailed {
-        let camera_offset_rotation_applied = camera_rotation_quat.mul_vec3(
-            camera_offset
-            - BODY_OFFSET_VEC3
-        );
-        let camera_ray_offset_rotation_applied = camera_rotation_quat.mul_vec3(
-            CAMERA_OFFSET_VEC3
-            - BODY_OFFSET_VEC3
-        );
+        // let camera_offset_rotation_applied = camera_rotation_quat.mul_vec3(camera_offset);
+        // let default_camera_offset_with_rotation = camera_rotation_quat.mul_vec3(CAMERA_OFFSET_VEC3);
         // Apply camera transforms
         *player_camera_transform = Transform {
-            translation: player_body_transform.translation + camera_offset_rotation_applied,
+            translation: player_body_transform.translation
+                + camera_offset_rotation_applied
+                - BODY_OFFSET_VEC3,
             rotation: camera_rotation_quat,
             ..default()
         };
         // Apply camera ray transforms
-        player_camera_caster.origin = player_body_transform.translation + camera_ray_offset_rotation_applied;
+        player_camera_caster.origin = player_body_transform.translation
+            + CAMERA_RAY_OFFSET_VEC3
+            - BODY_OFFSET_VEC3;
         player_camera_caster.direction = Dir3::from_xyz(
-            -camera_ray_offset_rotation_applied.x, 
-            -camera_ray_offset_rotation_applied.y,
-            -camera_ray_offset_rotation_applied.z
+            default_camera_offset_with_rotation.x, 
+            default_camera_offset_with_rotation.y - CAMERA_RAY_OFFSET_VEC3.y,
+            default_camera_offset_with_rotation.z
         ).unwrap();
     } else {
         // Apply camera transforms
@@ -265,11 +262,11 @@ pub fn handle_player_camera(
             ..default()
         };
         // Apply camera ray transforms
-        player_camera_caster.origin = camera_ray_offset_rotation_applied;
+        player_camera_caster.origin = CAMERA_RAY_OFFSET_VEC3;
         player_camera_caster.direction = Dir3::from_xyz(
-            -camera_ray_offset_rotation_applied.x, 
-            -camera_ray_offset_rotation_applied.y + 1.0,
-            -camera_ray_offset_rotation_applied.z
+            default_camera_offset_with_rotation.x, 
+            default_camera_offset_with_rotation.y - CAMERA_RAY_OFFSET_VEC3.y,
+            default_camera_offset_with_rotation.z
         ).unwrap();
     }
 }

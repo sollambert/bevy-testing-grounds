@@ -6,6 +6,7 @@ use bevy::{math::*, prelude::*};
 use crate::entities::EntityCollisionLayers;
 
 pub const CAMERA_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.0, 10.0);
+pub const CAMERA_RAY_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.0, 0.0);
 pub const BODY_OFFSET_VEC3: Vec3 = Vec3::new(0.0, 1.0, 0.0);
 
 #[derive(Component, Default)]
@@ -111,10 +112,11 @@ impl Player {
             parent.spawn((
                 PlayerCameraRay,
                 RayCaster::new(
-                    CAMERA_OFFSET_VEC3, 
-                    Dir3::from_xyz(-CAMERA_OFFSET_VEC3.x, 0.0, -CAMERA_OFFSET_VEC3.z).unwrap()
+                    CAMERA_RAY_OFFSET_VEC3, 
+                    Dir3::from_xyz(CAMERA_OFFSET_VEC3.x, CAMERA_OFFSET_VEC3.y + CAMERA_RAY_OFFSET_VEC3.y, CAMERA_OFFSET_VEC3.z).unwrap()
                 )
-                .with_max_time_of_impact(CAMERA_OFFSET_VEC3.z)
+                .with_max_hits(1)
+                .with_max_time_of_impact(CAMERA_OFFSET_VEC3.distance(CAMERA_RAY_OFFSET_VEC3))
                 .with_query_filter(
                     SpatialQueryFilter {
                         mask: LayerMask(EntityCollisionLayers::Ground.to_bits()),

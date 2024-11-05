@@ -1,5 +1,5 @@
 use avian3d::{prelude::{AngularVelocity, Collider, CollisionLayers, Friction, LayerMask, PhysicsDebugPlugin, RigidBody}, PhysicsPlugins};
-use bevy::prelude::*;
+use bevy::{prelude::*, render::mesh::ConeMeshBuilder};
 use controls::{controls::{handle_cursor, handle_debug_keys, handle_key_window_functions}, player::{handle_player_camera, handle_bailed_player_movement, handle_player_is_on_floor, handle_player_movement}};
 use entities::{player::player::{handle_player_bail, Player, PlayerBailEvent}, EntityCollisionLayers};
 use utils::debug::{setup_debug_screen, update_debug_screen};
@@ -85,11 +85,21 @@ fn setup(
         RigidBody::Static,
         Collider::cuboid(10.0, 10.0, 10.0),
         CollisionLayers::new(EntityCollisionLayers::Ground, LayerMask::ALL),
-        AngularVelocity(Vec3::new(2.5, 3.5, 1.5)),
         PbrBundle {
             mesh: meshes.add(Cuboid::new(10.0, 10.0, 10.0)),
             material: materials.add(Color::srgb_u8(124, 144, 255)),
             transform: Transform::from_xyz(0.0, 5.0, -20.0),
+            ..default()
+        },
+    ));
+    commands.spawn((
+        RigidBody::Static,
+        Collider::cone(10.0, 1.0),
+        CollisionLayers::new(EntityCollisionLayers::Ground, LayerMask::ALL),
+        PbrBundle {
+            mesh: meshes.add(ConeMeshBuilder::new(10.0, 1.0, 16)),
+            material: materials.add(Color::srgb_u8(124, 144, 255)),
+            transform: Transform::from_xyz(20.0, 0.5, -20.0),
             ..default()
         },
     ));
